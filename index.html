@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Carenderia — Realtime DB (Option B)</title>
+
+    <!-- Bootstrap 5 -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- html2pdf for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+      body {
+        background: #fff;
+      }
+      .badge-income {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      .badge-expense {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .small-muted {
+        font-size: 0.85rem;
+        color: #666;
+      }
+      .center {
+        text-align: center;
+      }
+      #pdfReportArea {
+        display: none;
+      } /* hidden area used to render PDF */
+    </style>
+  </head>
+  <body>
+    <div class="container py-5 text-center">
+      <h3 class="mb-1">Carenderia Daily Tracker (Realtime DB)</h3>
+      <p class="text-muted small mb-4">
+        Main page: Balance + Add Expense + End the Day. Reports in modal.
+      </p>
+
+      <div class="card mx-auto" style="max-width: 480px">
+        <div class="card-body">
+          <h4 class="card-title">
+            Balance (today's expenses): <span id="balanceDisplay">₱0.00</span>
+          </h4>
+          <p class="small-muted mb-0" id="todayLabel"></p>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-center gap-3 mt-4">
+        <button
+          class="btn btn-danger"
+          data-bs-toggle="modal"
+          data-bs-target="#addExpenseModal"
+        >
+          Add Expense
+        </button>
+        <button
+          class="btn btn-primary"
+          data-bs-toggle="modal"
+          data-bs-target="#endDayConfirmModal"
+        >
+          End the Day
+        </button>
+        <button
+          class="btn btn-secondary"
+          data-bs-toggle="modal"
+          data-bs-target="#reportsModal"
+        >
+          Reports
+        </button>
+      </div>
+    </div>
+
+    <!-- ADD EXPENSE MODAL (UPDATED) -->
+    <div class="modal fade" id="addExpenseModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Expense</h5>
+          </div>
+
+          <div class="modal-body">
+            <div class="row">
+              <div class="col-md-6 border-end">
+                <div class="mb-2">
+                  <label class="form-label">Amount</label>
+                  <input
+                    id="expenseAmount"
+                    type="number"
+                    step="0.01"
+                    class="form-control"
+                  />
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label">Name</label>
+                  <input id="expenseName" type="text" class="form-control" />
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label">Quantity</label>
+                  <input
+                    id="expenseQuantity"
+                    type="text"
+                    class="form-control"
+                  />
+                </div>
+              </div>
+
+              <div class="col-md-6">
+                <h6>Today's Expenses</h6>
+                <div
+                  id="todayExpenseList"
+                  style="max-height: 280px; overflow: auto"
+                >
+                  <div class="text-muted small">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">
+              Cancel
+            </button>
+            <button class="btn btn-danger" onclick="addExpense()">
+              Save Expense
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- End Day Confirm Modal -->
+    <div class="modal fade" id="endDayConfirmModal" tabindex="-1">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-body center">
+            <h5>End the Day?</h5>
+            <p class="small-muted">
+              This will finalize today's totals and generate the report PDF.
+            </p>
+            <div class="d-flex justify-content-center gap-2 mt-3">
+              <button class="btn btn-secondary" data-bs-dismiss="modal">
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary"
+                data-bs-dismiss="modal"
+                data-bs-toggle="modal"
+                data-bs-target="#incomeModal"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Income input modal -->
+    <div class="modal fade" id="incomeModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header"><h5>Input Today's Total Income</h5></div>
+          <div class="modal-body">
+            <div class="mb-2">
+              <label class="form-label">Total Income for today</label>
+              <input
+                id="incomeTotal"
+                type="number"
+                step="0.01"
+                class="form-control"
+                placeholder="e.g. 4500.00"
+              />
+            </div>
+            <div class="small text-muted">
+              After saving, a PDF will be generated and downloaded automatically
+              and stored for later download.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">
+              Cancel
+            </button>
+            <button class="btn btn-success" onclick="finishDay()">
+              Save & Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports Modal -->
+    <div class="modal fade" id="reportsModal" tabindex="-1">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5>Reports</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-lg-4">
+                <h6>Saved Reports</h6>
+                <div id="savedReportsList" class="list-group">Loading...</div>
+              </div>
+              <div class="col-lg-8">
+                <h6>Chart (Last 14 reports)</h6>
+                <canvas id="summaryChart" height="140"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden PDF area (rendered to create PDF) -->
+    <div id="pdfReportArea" aria-hidden="true">
+      <div
+        id="pdfReportContent"
+        style="
+          width: 800px;
+          padding: 20px;
+          font-family: Arial, sans-serif;
+          color: #111;
+        "
+      ></div>
+    </div>
+
+    <!-- Firebase modular SDKs -->
+    <!-- FIREBASE + JS -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+      import {
+        getDatabase,
+        ref as dbRef,
+        push,
+        set,
+        onValue,
+        get,
+        remove,
+      } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+      import {
+        getStorage,
+        ref as storageRef,
+        uploadBytes,
+        getDownloadURL,
+      } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+      // --- YOUR FIREBASE CONFIG ---
+      const firebaseConfig = {
+        apiKey: "AIzaSyDy1Nn1bWD-xZ-_caamokt_4MFV6DCTDdQ",
+        authDomain: "inventory-4c29b.firebaseapp.com",
+        databaseURL:
+          "https://inventory-4c29b-default-rtdb.asia-southeast1.firebasedatabase.app/",
+        projectId: "inventory-4c29b",
+        storageBucket: "inventory-4c29b.firebasestorage.app",
+        messagingSenderId: "293543488174",
+        appId: "1:293543488174:web:0cbc684fb1244635815b3f",
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+      const storage = getStorage(app);
+
+      const expensesRef = dbRef(db, "expenses");
+      const incomeRef = dbRef(db, "income");
+      const reportsRef = dbRef(db, "reports");
+
+      const PHP = (n) => "₱" + Number(n || 0).toFixed(2);
+      const todayStr = () => new Date().toISOString().slice(0, 10);
+
+      document.getElementById("todayLabel").innerText = `Date: ${todayStr()}`;
+
+      // REALTIME BALANCE + LIST OF TODAY'S EXPENSES
+      onValue(expensesRef, (snapshot) => {
+        const val = snapshot.val() || {};
+        const today = todayStr();
+
+        let total = 0;
+        let listHTML = "";
+
+        const todays = Object.entries(val).filter(
+          ([id, e]) => e.date === today
+        );
+
+        if (todays.length === 0) {
+          listHTML = `<div class="text-muted small">No expenses yet.</div>`;
+        } else {
+          todays.forEach(([id, e]) => {
+            total += Number(e.amount || 0);
+            listHTML += `
+              <div class="border rounded p-2 mb-2">
+                <strong>${e.name}</strong><br>
+                <small>₱${e.amount} — Qty: ${e.quantity || 0}</small>
+              </div>`;
+          });
+        }
+
+        document.getElementById("balanceDisplay").innerText = PHP(total);
+        document.getElementById("todayExpenseList").innerHTML = listHTML;
+      });
+
+      // ADD EXPENSE
+      window.addExpense = async function () {
+        const amount = parseFloat(
+          document.getElementById("expenseAmount").value
+        );
+        const name = document.getElementById("expenseName").value;
+        const quantity = document.getElementById("expenseQuantity").value || 0;
+        if (!amount) return alert("Enter a valid amount.");
+        if (!name.trim()) return alert("Expense name required.");
+
+        const newRef = push(expensesRef);
+        await set(newRef, {
+          amount,
+          name,
+          quantity,
+          date: todayStr(),
+          timestamp: new Date().toISOString(),
+        });
+
+        document.getElementById("expenseAmount").value = "";
+        document.getElementById("expenseName").value = "";
+        document.getElementById("expenseQuantity").value = "";
+
+        bootstrap.Modal.getInstance(
+          document.getElementById("addExpenseModal")
+        ).hide();
+      };
+
+      // The rest of your functions remain unchanged: finishDay(), PDF generation, loading reports, charts...
+    </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
