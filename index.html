@@ -369,6 +369,9 @@
           const bs = bootstrap.Modal.getInstance(modalEl);
           if (bs) bs.hide();
           editingExpenseId = null;
+          document.getElementById("expenseAmount").value = "";
+          document.getElementById("expenseName").value = "";
+          document.getElementById("expenseQuantity").value = "";
         } catch (err) {
           console.error(err);
           alert("Failed to save expense: " + err.message);
