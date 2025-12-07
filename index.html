@@ -493,6 +493,52 @@
             )} · Income: ${PHP(d.income || 0)}</div></div>`;
             list.appendChild(item);
           }
+
+          // chart
+          let summaryChart = null;
+          window.loadSummaryChart = async function () {
+            try {
+              const snap = await get(reportsRef);
+              const data = snap.val() || {};
+              const keys = Object.keys(data).sort();
+              const last = keys.slice(-14);
+              const labels = [];
+              const nets = [];
+              last.forEach((k) => {
+                labels.push(k);
+                nets.push(Number(data[k].net || 0));
+              });
+              const ctx = document
+                .getElementById("summaryChart")
+                .getContext("2d");
+              if (summaryChart) {
+                summaryChart.data.labels = labels;
+                summaryChart.data.datasets[0].data = nets;
+                summaryChart.update();
+              } else {
+                summaryChart = new Chart(ctx, {
+                  type: "bar",
+                  data: {
+                    labels,
+                    datasets: [
+                      {
+                        label: "Net Income",
+                        data: nets,
+                        backgroundColor: "#2b6cb0",
+                      },
+                    ],
+                  },
+                  options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } },
+                  },
+                });
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          };
         } catch (err) {
           console.error(err);
         }
