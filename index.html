@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Carenderia — Realtime DB (Option B)</title>
+    <title>Carenderia — Realtime DB (Auto-upload PDF)</title>
 
-    <!-- Bootstrap 5 -->
+    <!-- Bootstrap 5 CSS -->
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
       rel="stylesheet"
@@ -21,14 +21,6 @@
       body {
         background: #fff;
       }
-      .badge-income {
-        background: #d1fae5;
-        color: #065f46;
-      }
-      .badge-expense {
-        background: #fee2e2;
-        color: #991b1b;
-      }
       .small-muted {
         font-size: 0.85rem;
         color: #666;
@@ -39,6 +31,13 @@
       #pdfReportArea {
         display: none;
       } /* hidden area used to render PDF */
+      .expense-item {
+        border-bottom: 1px solid #eee;
+        padding: 8px 6px;
+      }
+      .list-group-item .btn {
+        margin-left: 6px;
+      }
     </style>
   </head>
   <body>
@@ -82,14 +81,13 @@
       </div>
     </div>
 
-    <!-- ADD EXPENSE MODAL (UPDATED) -->
+    <!-- ADD EXPENSE MODAL -->
     <div class="modal fade" id="addExpenseModal" tabindex="-1">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Add Expense</h5>
           </div>
-
           <div class="modal-body">
             <div class="row">
               <div class="col-md-6 border-end">
@@ -100,12 +98,18 @@
                     type="number"
                     step="0.01"
                     class="form-control"
+                    placeholder="e.g. 150.50"
                   />
                 </div>
 
                 <div class="mb-2">
                   <label class="form-label">Name</label>
-                  <input id="expenseName" type="text" class="form-control" />
+                  <input
+                    id="expenseName"
+                    type="text"
+                    class="form-control"
+                    placeholder="e.g. Pork, Rice, Fuel"
+                  />
                 </div>
 
                 <div class="mb-2">
@@ -114,7 +118,20 @@
                     id="expenseQuantity"
                     type="text"
                     class="form-control"
+                    placeholder="e.g. 2kg"
                   />
+                </div>
+
+                <div class="my-3 d-grid gap-2">
+                  <button class="btn btn-danger" onclick="addExpense()">
+                    Save Expense
+                  </button>
+                  <button
+                    class="btn btn-outline-secondary"
+                    data-bs-dismiss="modal"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
 
@@ -122,27 +139,21 @@
                 <h6>Today's Expenses</h6>
                 <div
                   id="todayExpenseList"
-                  style="max-height: 280px; overflow: auto"
+                  style="max-height: 340px; overflow: auto"
                 >
                   <div class="text-muted small">Loading...</div>
                 </div>
               </div>
             </div>
           </div>
-
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">
-              Cancel
-            </button>
-            <button class="btn btn-danger" onclick="addExpense()">
-              Save Expense
-            </button>
+          <div class="modal-footer d-none">
+            <!-- footer intentionally hidden because controls are inside left column -->
           </div>
         </div>
       </div>
     </div>
 
-    <!-- End Day Confirm Modal -->
+    <!-- END DAY CONFIRM MODAL -->
     <div class="modal fade" id="endDayConfirmModal" tabindex="-1">
       <div class="modal-dialog modal-sm">
         <div class="modal-content">
@@ -169,7 +180,7 @@
       </div>
     </div>
 
-    <!-- Income input modal -->
+    <!-- INCOME INPUT MODAL -->
     <div class="modal fade" id="incomeModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -186,8 +197,8 @@
               />
             </div>
             <div class="small text-muted">
-              After saving, a PDF will be generated and downloaded automatically
-              and stored for later download.
+              After saving, a PDF will be generated, downloaded automatically,
+              and uploaded to storage for later download.
             </div>
           </div>
           <div class="modal-footer">
@@ -202,7 +213,7 @@
       </div>
     </div>
 
-    <!-- Reports Modal -->
+    <!-- REPORTS MODAL -->
     <div class="modal fade" id="reportsModal" tabindex="-1">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
@@ -245,7 +256,6 @@
     </div>
 
     <!-- Firebase modular SDKs -->
-    <!-- FIREBASE + JS -->
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
       import {
@@ -264,7 +274,7 @@
         getDownloadURL,
       } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
-      // --- YOUR FIREBASE CONFIG ---
+      // ---------- FIREBASE CONFIG (replace with yours if needed) ----------
       const firebaseConfig = {
         apiKey: "AIzaSyDy1Nn1bWD-xZ-_caamokt_4MFV6DCTDdQ",
         authDomain: "inventory-4c29b.firebaseapp.com",
@@ -275,21 +285,25 @@
         messagingSenderId: "293543488174",
         appId: "1:293543488174:web:0cbc684fb1244635815b3f",
       };
+      // -------------------------------------------------------------------
 
       const app = initializeApp(firebaseConfig);
       const db = getDatabase(app);
       const storage = getStorage(app);
 
-      const expensesRef = dbRef(db, "expenses");
-      const incomeRef = dbRef(db, "income");
-      const reportsRef = dbRef(db, "reports");
+      // Realtime DB refs
+      const expensesRef = dbRef(db, "expenses"); // continuous logs (all dates)
+      const incomeRef = dbRef(db, "income"); // continuous income logs
+      const reportsRef = dbRef(db, "reports"); // saved summaries per date
 
-      const PHP = (n) => "₱" + Number(n || 0).toFixed(2);
-      const todayStr = () => new Date().toISOString().slice(0, 10);
+      // helpers
+      const PHP = (n) => `₱${Number(n || 0).toFixed(2)}`;
+      const todayStr = (d = new Date()) => d.toISOString().slice(0, 10);
 
+      // UI initial
       document.getElementById("todayLabel").innerText = `Date: ${todayStr()}`;
 
-      // REALTIME BALANCE + LIST OF TODAY'S EXPENSES
+      // REALTIME: listen to /expenses and recalc today's total and list
       onValue(expensesRef, (snapshot) => {
         const val = snapshot.val() || {};
         const today = todayStr();
@@ -297,20 +311,32 @@
         let total = 0;
         let listHTML = "";
 
-        const todays = Object.entries(val).filter(
-          ([id, e]) => e.date === today
+        // build array of todays entries, preserving insertion order where possible
+        const entries = [];
+        for (const key in val) {
+          const e = val[key];
+          if (!e) continue;
+          if (String(e.date) === today) {
+            entries.push({ id: key, ...e });
+          }
+        }
+
+        // sort by timestamp if available
+        entries.sort((a, b) =>
+          a.timestamp && b.timestamp ? (a.timestamp > b.timestamp ? 1 : -1) : 0
         );
 
-        if (todays.length === 0) {
+        if (entries.length === 0) {
           listHTML = `<div class="text-muted small">No expenses yet.</div>`;
         } else {
-          todays.forEach(([id, e]) => {
+          entries.forEach((e) => {
             total += Number(e.amount || 0);
-            listHTML += `
-              <div class="border rounded p-2 mb-2">
-                <strong>${e.name}</strong><br>
-                <small>₱${e.amount} — Qty: ${e.quantity || 0}</small>
-              </div>`;
+            listHTML += `<div class="expense-item">
+            <div><strong>${escapeHtml(e.name || "")}</strong></div>
+            <div class="small-muted">₱${Number(e.amount || 0).toFixed(
+              2
+            )} — Qty: ${Number(e.quantity || 0)}</div>
+          </div>`;
           });
         }
 
@@ -318,38 +344,370 @@
         document.getElementById("todayExpenseList").innerHTML = listHTML;
       });
 
-      // ADD EXPENSE
+      // ADD EXPENSE (global)
       window.addExpense = async function () {
         const amount = parseFloat(
           document.getElementById("expenseAmount").value
         );
-        const name = document.getElementById("expenseName").value;
-        const quantity = document.getElementById("expenseQuantity").value || 0;
-        if (!amount) return alert("Enter a valid amount.");
-        if (!name.trim()) return alert("Expense name required.");
+        const name = (
+          document.getElementById("expenseName").value || ""
+        ).trim();
+        const quantity =
+          document.getElementById("expenseQuantity").value || "0";
 
+        if (!amount || isNaN(amount) || amount <= 0) {
+          alert("Enter a valid amount.");
+          return;
+        }
+        if (!name) {
+          alert("Expense name required.");
+          return;
+        }
+
+        // push to /expenses
         const newRef = push(expensesRef);
         await set(newRef, {
-          amount,
-          name,
-          quantity,
+          amount: Number(amount),
+          name: name,
+          quantity: quantity,
           date: todayStr(),
           timestamp: new Date().toISOString(),
         });
 
+        // clear inputs, hide modal
         document.getElementById("expenseAmount").value = "";
         document.getElementById("expenseName").value = "";
         document.getElementById("expenseQuantity").value = "";
-
-        bootstrap.Modal.getInstance(
-          document.getElementById("addExpenseModal")
-        ).hide();
+        const modalEl = document.getElementById("addExpenseModal");
+        const bs = bootstrap.Modal.getInstance(modalEl);
+        if (bs) bs.hide();
       };
 
-      // The rest of your functions remain unchanged: finishDay(), PDF generation, loading reports, charts...
+      // FINISH DAY (global) - triggered by Save & Generate Report button
+      window.finishDay = async function () {
+        const incomeInput = parseFloat(
+          document.getElementById("incomeTotal").value
+        );
+        if (!incomeInput || isNaN(incomeInput)) {
+          alert("Enter a valid income amount.");
+          return;
+        }
+        const today = todayStr();
+
+        try {
+          // 1) read all expenses (client-side filter by date)
+          const snap = await get(expensesRef);
+          const data = snap.val() || {};
+          const todays = [];
+          for (const key in data) {
+            const e = data[key];
+            if (!e) continue;
+            if (String(e.date) === today) {
+              todays.push({
+                id: key,
+                amount: Number(e.amount || 0),
+                name: e.name || "",
+                quantity: Number(e.quantity || 0),
+                timestamp: e.timestamp || "",
+              });
+            }
+          }
+
+          // 2) compute totals
+          const totalExpenses = todays.reduce((s, i) => s + (i.amount || 0), 0);
+          const net = Number(incomeInput) - Number(totalExpenses);
+
+          // 3) prepare summary object
+          const summary = {
+            date: today,
+            income: Number(incomeInput),
+            totalExpenses: Number(totalExpenses),
+            net: Number(net),
+            expenses: todays.map((x) => ({
+              name: x.name,
+              amount: x.amount,
+              quantity: x.quantity,
+              timestamp: x.timestamp,
+            })),
+            createdAt: new Date().toISOString(),
+          };
+
+          // 4) generate PDF (html2pdf) as Blob
+          buildPdfHtml(summary);
+          const element = document.getElementById("pdfReportContent");
+          const opt = {
+            margin: 0.4,
+            filename: `carenderia-report-${today}.pdf`,
+            image: { type: "jpeg", quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+          };
+          const worker = html2pdf().set(opt).from(element);
+          // produce blob
+          const pdfBlob = await worker.toPdf().output("blob");
+
+          // 5) upload PDF Blob to Storage (Option A)
+          const storagePath = `reports/carenderia-report-${today}.pdf`;
+          const sRef = storageRef(storage, storagePath);
+          await uploadBytes(sRef, pdfBlob, { contentType: "application/pdf" });
+          const pdfUrl = await getDownloadURL(sRef);
+
+          // 6) save summary under /reports/<date>
+          const reportRef = dbRef(db, `reports/${today}`);
+          await set(reportRef, { ...summary, pdfUrl });
+
+          // 7) push income record to /income (continuous)
+          const inRef = push(incomeRef);
+          await set(inRef, {
+            amount: Number(incomeInput),
+            date: today,
+            timestamp: new Date().toISOString(),
+          });
+
+          // 8) delete today's expense entries from /expenses
+          for (const it of todays) {
+            const childRef = dbRef(db, `expenses/${it.id}`);
+            await remove(childRef);
+          }
+
+          // 9) trigger automatic download for user
+          const url = URL.createObjectURL(pdfBlob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `carenderia-report-${today}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+
+          // hide income modal
+          const modalEl = document.getElementById("incomeModal");
+          const bsModal = bootstrap.Modal.getInstance(modalEl);
+          if (bsModal) bsModal.hide();
+
+          // refresh reports list and chart
+          await loadSavedReports();
+          await loadSummaryChart();
+
+          // notify
+          alert(
+            `Day finalized. Net Income: ${PHP(net)}. PDF generated & saved.`
+          );
+        } catch (err) {
+          console.error("finishDay error", err);
+          alert("Failed to finalize day: " + (err.message || err));
+        }
+      };
+
+      // Build PDF HTML content for the day's summary
+      function buildPdfHtml(summary) {
+        const rows = [];
+        rows.push(`<div style="font-family:Arial, sans-serif; color:#111">`);
+        rows.push(`<h2 style="text-align:center">Carenderia Daily Report</h2>`);
+        rows.push(
+          `<p style="text-align:center;margin-top:0">${escapeHtml(
+            summary.date
+          )}</p>`
+        );
+        rows.push(`<hr>`);
+        rows.push(`<h4>Summary</h4>`);
+        rows.push(
+          `<table style="width:100%; margin-bottom:10px;"><tr><td>Income</td><td style="text-align:right">${PHP(
+            summary.income
+          )}</td></tr><tr><td>Total Expenses</td><td style="text-align:right">${PHP(
+            summary.totalExpenses
+          )}</td></tr><tr><td><strong>Net Income</strong></td><td style="text-align:right"><strong>${PHP(
+            summary.net
+          )}</strong></td></tr></table>`
+        );
+        rows.push(`<h4>Expenses</h4>`);
+        if (!summary.expenses || summary.expenses.length === 0) {
+          rows.push(`<div>No expenses recorded for this day.</div>`);
+        } else {
+          rows.push(
+            `<table style="width:100%; border-collapse:collapse;"><thead><tr style="background:#f4f4f4"><th style="text-align:left;padding:6px;border:1px solid #ddd;">Name</th><th style="text-align:left;padding:6px;border:1px solid #ddd;">Qty</th><th style="text-align:right;padding:6px;border:1px solid #ddd;">Amount</th></tr></thead><tbody>`
+          );
+          summary.expenses.forEach((ex) => {
+            rows.push(
+              `<tr><td style="padding:6px;border:1px solid #eee;">${escapeHtml(
+                ex.name || ""
+              )}</td><td style="padding:6px;border:1px solid #eee;">${Number(
+                ex.quantity || 0
+              )}</td><td style="padding:6px;border:1px solid #eee;text-align:right;">${PHP(
+                ex.amount
+              )}</td></tr>`
+            );
+          });
+          rows.push(`</tbody></table>`);
+        }
+        rows.push(
+          `<hr><p style="font-size:12px;color:#666">Generated: ${new Date().toLocaleString()}</p>`
+        );
+        rows.push(`</div>`);
+        document.getElementById("pdfReportContent").innerHTML = rows.join("");
+      }
+
+      // Load saved reports list (from /reports)
+      window.loadSavedReports = async function () {
+        try {
+          const snap = await get(dbRef(db, "reports"));
+          const data = snap.val() || {};
+          const list = document.getElementById("savedReportsList");
+          list.innerHTML = "";
+          const keys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1)); // newest first
+          if (!keys.length) {
+            list.innerHTML =
+              '<div class="small text-muted">No saved reports yet.</div>';
+            return;
+          }
+          for (const k of keys) {
+            const d = data[k];
+            const item = document.createElement("div");
+            item.className =
+              "list-group-item d-flex justify-content-between align-items-start";
+            item.innerHTML = `<div>
+              <div><strong>${escapeHtml(k)}</strong></div>
+              <div class="small text-muted">Net: ${PHP(
+                d.net || 0
+              )} · Income: ${PHP(d.income || 0)}</div>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+              <a class="btn btn-outline-primary" href="${
+                d.pdfUrl || "#"
+              }" target="_blank" ${d.pdfUrl ? "" : "disabled"}>Download PDF</a>
+              <button class="btn btn-outline-secondary" onclick='viewReport("${k}")'>View</button>
+            </div>`;
+            list.appendChild(item);
+          }
+        } catch (err) {
+          console.error("loadSavedReports", err);
+        }
+      };
+
+      // viewReport shows the saved report content in a modal
+      window.viewReport = async function (dateKey) {
+        try {
+          const snap = await get(dbRef(db, `reports/${dateKey}`));
+          const d = snap.val();
+          if (!d) {
+            alert("Report not found");
+            return;
+          }
+
+          const modalHtml = document.createElement("div");
+          modalHtml.className = "modal fade";
+          modalHtml.tabIndex = -1;
+          modalHtml.innerHTML = `<div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Report: ${escapeHtml(
+            dateKey
+          )}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" style="max-height:60vh; overflow:auto;"></div><div class="modal-footer"><a class="btn btn-primary" href="${
+            d.pdfUrl || "#"
+          }" target="_blank" ${
+            d.pdfUrl ? "" : "disabled"
+          }>Open PDF</a><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div></div></div>`;
+          document.body.appendChild(modalHtml);
+          const body = modalHtml.querySelector(".modal-body");
+          const content = [];
+          content.push(`<h6>Income: ${PHP(d.income)}</h6>`);
+          content.push(
+            `<p class="small-muted">Expenses: ${PHP(
+              d.totalExpenses
+            )} · Net: ${PHP(d.net)}</p>`
+          );
+          if (d.expenses && d.expenses.length) {
+            content.push(
+              `<hr><h6>Expenses</h6><table style="width:100%; border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Name</th><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Qty</th><th style="text-align:right;padding:6px;border-bottom:1px solid #ddd;">Amount</th></tr></thead><tbody>`
+            );
+            d.expenses.forEach((e) => {
+              content.push(
+                `<tr><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${escapeHtml(
+                  e.name || ""
+                )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${Number(
+                  e.quantity || 0
+                )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;text-align:right;">${PHP(
+                  e.amount
+                )}</td></tr>`
+              );
+            });
+            content.push(`</tbody></table>`);
+          } else {
+            content.push(
+              '<div class="small text-muted">No expenses recorded.</div>'
+            );
+          }
+          body.innerHTML = content.join("");
+          const bs = new bootstrap.Modal(modalHtml);
+          bs.show();
+          modalHtml.addEventListener("hidden.bs.modal", () => {
+            bs.dispose();
+            modalHtml.remove();
+          });
+        } catch (err) {
+          console.error("viewReport", err);
+        }
+      };
+
+      // Chart (last 14 reports)
+      let summaryChart = null;
+      window.loadSummaryChart = async function () {
+        try {
+          const snap = await get(dbRef(db, "reports"));
+          const data = snap.val() || {};
+          const keys = Object.keys(data).sort(); // ascending
+          const last = keys.slice(-14);
+          const labels = [];
+          const nets = [];
+          last.forEach((k) => {
+            labels.push(k);
+            nets.push(Number(data[k].net || 0));
+          });
+
+          const ctx = document.getElementById("summaryChart").getContext("2d");
+          if (summaryChart) {
+            summaryChart.data.labels = labels;
+            summaryChart.data.datasets[0].data = nets;
+            summaryChart.update();
+          } else {
+            summaryChart = new Chart(ctx, {
+              type: "bar",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "Net Income",
+                    data: nets,
+                    backgroundColor: "#2b6cb0",
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } },
+              },
+            });
+          }
+        } catch (err) {
+          console.error("loadSummaryChart", err);
+        }
+      };
+
+      // Escape html helper
+      function escapeHtml(s) {
+        if (!s) return "";
+        return String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+        );
+      }
+
+      // Initial load
+      (async function init() {
+        await loadSavedReports();
+        await loadSummaryChart();
+      })();
     </script>
 
-    <!-- Bootstrap JS -->
+    <!-- Bootstrap 5 bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
