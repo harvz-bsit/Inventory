@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Carenderia — Realtime DB (No PDF)</title>
+    <title>Carenderia — Realtime DB (Editable Expenses)</title>
 
     <!-- Bootstrap 5 CSS -->
     <link
@@ -95,7 +95,6 @@
                     placeholder="e.g. 150.50"
                   />
                 </div>
-
                 <div class="mb-2">
                   <label class="form-label">Name</label>
                   <input
@@ -105,17 +104,15 @@
                     placeholder="e.g. Pork, Rice, Fuel"
                   />
                 </div>
-
                 <div class="mb-2">
                   <label class="form-label">Quantity</label>
                   <input
                     id="expenseQuantity"
                     type="text"
                     class="form-control"
-                    placeholder="e.g. 1kg, 1/2 g, 2 packs"
+                    placeholder="e.g. 2kg, 1/2g"
                   />
                 </div>
-
                 <div class="my-3 d-grid gap-2">
                   <button class="btn btn-danger" onclick="addExpense()">
                     Save Expense
@@ -128,7 +125,6 @@
                   </button>
                 </div>
               </div>
-
               <div class="col-md-6">
                 <h6>Today's Expenses</h6>
                 <div
@@ -140,6 +136,7 @@
               </div>
             </div>
           </div>
+          <div class="modal-footer d-none"></div>
         </div>
       </div>
     </div>
@@ -151,7 +148,7 @@
           <div class="modal-body center">
             <h5>End the Day?</h5>
             <p class="small-muted">
-              This will finalize today's totals for viewing in reports.
+              This will finalize today's totals and generate the report PDF.
             </p>
             <div class="d-flex justify-content-center gap-2 mt-3">
               <button class="btn btn-secondary" data-bs-dismiss="modal">
@@ -188,8 +185,8 @@
               />
             </div>
             <div class="small text-muted">
-              After saving, the day's summary will be stored in the database for
-              later viewing.
+              After saving, the day will be finalized and stored for later
+              viewing.
             </div>
           </div>
           <div class="modal-footer">
@@ -197,7 +194,7 @@
               Cancel
             </button>
             <button class="btn btn-success" onclick="finishDay()">
-              Save Summary
+              Save Day
             </button>
           </div>
         </div>
@@ -219,7 +216,7 @@
                 <div id="savedReportsList" class="list-group">Loading...</div>
               </div>
               <div class="col-lg-8">
-                <h6>Chart (Last 14 reports)</h6>
+                <h6>Income (Last 14 reports)</h6>
                 <canvas id="summaryChart" height="140"></canvas>
               </div>
             </div>
@@ -233,7 +230,7 @@
       </div>
     </div>
 
-    <!-- FIREBASE -->
+    <!-- Firebase -->
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
       import {
@@ -252,16 +249,16 @@
         databaseURL:
           "https://inventory-4c29b-default-rtdb.asia-southeast1.firebasedatabase.app/",
         projectId: "inventory-4c29b",
-        storageBucket: "inventory-4c29b.appspot.com",
+        storageBucket: "inventory-4c29b.firebasestorage.app",
         messagingSenderId: "293543488174",
         appId: "1:293543488174:web:0cbc684fb1244635815b3f",
       };
 
       const app = initializeApp(firebaseConfig);
       const db = getDatabase(app);
-
       const expensesRef = dbRef(db, "expenses");
       const reportsRef = dbRef(db, "reports");
+      const incomeRef = dbRef(db, "income");
 
       const PHP = (n) => `₱${Number(n || 0).toFixed(2)}`;
       const todayStr = (d) => d.toISOString().slice(0, 10);
@@ -269,39 +266,47 @@
         new Date()
       )}`;
 
-      // Update today's expense list
-      onValue(expensesRef, (snap) => {
-        const val = snap.val() || {};
+      let editingExpenseId = null;
+
+      // realtime expenses
+      onValue(expensesRef, (snapshot) => {
+        const val = snapshot.val() || {};
         const today = todayStr(new Date());
-        let total = 0;
         const entries = [];
         for (const key in val) {
-          if (val[key].date === today) entries.push({ id: key, ...val[key] });
+          const e = val[key];
+          if (e?.date === today) entries.push({ id: key, ...e });
         }
         entries.sort((a, b) =>
           a.timestamp && b.timestamp ? (a.timestamp > b.timestamp ? 1 : -1) : 0
         );
-        let html = entries.length
-          ? entries
-              .map(
-                (e) => `
-          <div class="expense-item">
-            <div><strong>${escapeHtml(e.name)}</strong></div>
-            <div class="small-muted">₱${Number(e.amount).toFixed(
-              2
-            )} — Qty: ${escapeHtml(e.quantity)}</div>
-          </div>
-        `
-              )
-              .join("")
-          : `<div class="text-muted small">No expenses yet.</div>`;
-        document.getElementById("balanceDisplay").innerText = PHP(
-          entries.reduce((s, e) => s + (e.amount || 0), 0)
-        );
-        document.getElementById("todayExpenseList").innerHTML = html;
+        let total = 0;
+        let listHTML = "";
+        if (entries.length === 0) {
+          listHTML = '<div class="text-muted small">No expenses yet.</div>';
+        } else {
+          entries.forEach((e) => {
+            total += Number(e.amount || 0);
+            listHTML += `<div class="expense-item d-flex justify-content-between align-items-center">
+              <div>
+                <div><strong>${escapeHtml(e.name || "")}</strong></div>
+                <div class="small-muted">₱${Number(e.amount || 0).toFixed(
+                  2
+                )} — Qty: ${escapeHtml(e.quantity || "")}</div>
+              </div>
+              <div>
+                <button class="btn btn-sm btn-outline-secondary" onclick='editExpense("${
+                  e.id
+                }")'>Edit</button>
+              </div>
+            </div>`;
+          });
+        }
+        document.getElementById("balanceDisplay").innerText = PHP(total);
+        document.getElementById("todayExpenseList").innerHTML = listHTML;
       });
 
-      // Add expense
+      // add or update expense
       window.addExpense = async function () {
         const amount = parseFloat(
           document.getElementById("expenseAmount").value
@@ -309,198 +314,262 @@
         const name = (
           document.getElementById("expenseName").value || ""
         ).trim();
-        const quantity = (
-          document.getElementById("expenseQuantity").value || ""
-        ).trim();
-
-        if (!amount || amount <= 0) {
-          alert("Enter valid amount");
+        const quantity = document.getElementById("expenseQuantity").value || "";
+        if (!amount || isNaN(amount) || amount <= 0) {
+          alert("Enter a valid amount.");
           return;
         }
         if (!name) {
-          alert("Enter expense name");
+          alert("Expense name required.");
           return;
         }
-
-        const newRef = push(expensesRef);
-        await set(newRef, {
-          amount,
-          name,
-          quantity,
-          date: todayStr(new Date()),
-          timestamp: new Date().toISOString(),
-        });
+        if (editingExpenseId) {
+          const expRef = dbRef(db, `expenses/${editingExpenseId}`);
+          await set(expRef, {
+            amount,
+            name,
+            quantity,
+            date: todayStr(new Date()),
+            timestamp: new Date().toISOString(),
+          });
+          editingExpenseId = null;
+        } else {
+          const newRef = push(expensesRef);
+          await set(newRef, {
+            amount,
+            name,
+            quantity,
+            date: todayStr(new Date()),
+            timestamp: new Date().toISOString(),
+          });
+        }
         document.getElementById("expenseAmount").value = "";
         document.getElementById("expenseName").value = "";
         document.getElementById("expenseQuantity").value = "";
-        bootstrap.Modal.getInstance(
-          document.getElementById("addExpenseModal")
-        )?.hide();
+        const modalEl = document.getElementById("addExpenseModal");
+        const bs = bootstrap.Modal.getInstance(modalEl);
+        if (bs) bs.hide();
       };
 
-      // Finish day (save summary)
+      // edit expense
+      window.editExpense = async function (id) {
+        const snap = await get(dbRef(db, `expenses/${id}`));
+        const data = snap.val();
+        if (!data) return alert("Expense not found");
+        document.getElementById("expenseAmount").value = data.amount || "";
+        document.getElementById("expenseName").value = data.name || "";
+        document.getElementById("expenseQuantity").value = data.quantity || "";
+        editingExpenseId = id;
+        const modalEl = document.getElementById("addExpenseModal");
+        const bs = bootstrap.Modal.getOrCreateInstance(modalEl);
+        bs.show();
+      };
+
+      // finish day
       window.finishDay = async function () {
-        const income = parseFloat(document.getElementById("incomeTotal").value);
-        if (!income || income < 0) {
-          alert("Enter valid income");
+        const incomeInput = parseFloat(
+          document.getElementById("incomeTotal").value
+        );
+        if (!incomeInput || isNaN(incomeInput)) {
+          alert("Enter a valid income amount.");
           return;
         }
         const today = todayStr(new Date());
-
-        // get today's expenses
-        const snap = await get(expensesRef);
-        const val = snap.val() || {};
-        const todays = [];
-        for (const k in val) {
-          if (val[k].date === today) todays.push({ id: k, ...val[k] });
-        }
-        const totalExpenses = todays.reduce((s, e) => s + (e.amount || 0), 0);
-        const net = income - totalExpenses;
-        const summary = {
-          date: today,
-          income,
-          totalExpenses,
-          net,
-          expenses: todays.map((e) => ({
-            name: e.name,
-            amount: e.amount,
-            quantity: e.quantity,
-            timestamp: e.timestamp,
-          })),
-          createdAt: new Date().toISOString(),
-        };
-
-        // save to reports
-        await set(dbRef(db, `reports/${today}`), summary);
-
-        // remove today's expenses
-        for (const e of todays) await remove(dbRef(db, `expenses/${e.id}`));
-
-        bootstrap.Modal.getInstance(
-          document.getElementById("incomeModal")
-        )?.hide();
-        document.getElementById("incomeTotal").value = "";
-
-        alert(`Day saved. Net income: ${PHP(net)}`);
-        await loadSavedReports();
-        await loadSummaryChart();
-      };
-
-      // Load saved reports
-      window.loadSavedReports = async function () {
-        const snap = await get(reportsRef);
-        const data = snap.val() || {};
-        const list = document.getElementById("savedReportsList");
-        list.innerHTML = "";
-        const keys = Object.keys(data).sort((a, b) => b.localeCompare(a));
-        if (!keys.length) {
-          list.innerHTML =
-            '<div class="small text-muted">No saved reports yet.</div>';
-          return;
-        }
-        for (const k of keys) {
-          const d = data[k];
-          const item = document.createElement("div");
-          item.className =
-            "list-group-item d-flex justify-content-between align-items-start";
-          item.innerHTML = `<div><div><strong>${escapeHtml(k)}</strong></div>
-            <div class="small text-muted">Net: ${PHP(d.net)} · Income: ${PHP(
-            d.income
-          )}</div></div>
-            <div class="btn-group btn-group-sm" role="group">
-              <button class="btn btn-outline-secondary" onclick='viewReport("${k}")'>View</button>
-            </div>`;
-          list.appendChild(item);
-        }
-      };
-
-      window.viewReport = async function (dateKey) {
-        const snap = await get(dbRef(db, `reports/${dateKey}`));
-        const d = snap.val();
-        if (!d) {
-          alert("Report not found");
-          return;
-        }
-        const modalHtml = document.createElement("div");
-        modalHtml.className = "modal fade";
-        modalHtml.tabIndex = -1;
-        modalHtml.innerHTML = `<div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Report: ${escapeHtml(
-          dateKey
-        )}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" style="max-height:60vh;overflow:auto;"></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div></div></div>`;
-        document.body.appendChild(modalHtml);
-        const body = modalHtml.querySelector(".modal-body");
-        let html = `<h6>Income: ${PHP(
-          d.income
-        )}</h6><p class="small-muted">Expenses: ${PHP(
-          d.totalExpenses
-        )} · Net: ${PHP(d.net)}</p>`;
-        if (d.expenses?.length) {
-          html += `<hr><h6>Expenses</h6><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Name</th><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Qty</th><th style="text-align:right;padding:6px;border-bottom:1px solid #ddd;">Amount</th></tr></thead><tbody>`;
-          d.expenses.forEach((e) => {
-            html += `<tr><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${escapeHtml(
-              e.name
-            )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${escapeHtml(
-              e.quantity
-            )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;text-align:right;">${PHP(
-              e.amount
-            )}</td></tr>`;
+        try {
+          const snap = await get(expensesRef);
+          const data = snap.val() || {};
+          const todays = [];
+          for (const key in data) {
+            const e = data[key];
+            if (e?.date === today) todays.push({ id: key, ...e });
+          }
+          const totalExpenses = todays.reduce((s, i) => s + (i.amount || 0), 0);
+          const net = incomeInput - totalExpenses;
+          const summary = {
+            date: today,
+            income: incomeInput,
+            totalExpenses,
+            net,
+            expenses: todays.map((x) => ({
+              name: x.name,
+              amount: x.amount,
+              quantity: x.quantity,
+              timestamp: x.timestamp,
+            })),
+            createdAt: new Date().toISOString(),
+          };
+          const reportRef = dbRef(db, `reports/${today}`);
+          await set(reportRef, summary);
+          const inRef = push(incomeRef);
+          await set(inRef, {
+            amount: incomeInput,
+            date: today,
+            timestamp: new Date().toISOString(),
           });
-          html += `</tbody></table>`;
+          for (const it of todays) {
+            const childRef = dbRef(db, `expenses/${it.id}`);
+            await remove(childRef);
+          }
+          document.getElementById("incomeTotal").value = "";
+          const modalEl = document.getElementById("incomeModal");
+          const bs = bootstrap.Modal.getInstance(modalEl);
+          if (bs) bs.hide();
+          await loadSavedReports();
+          await loadSummaryChart();
+          alert(`Day finalized. Net Income: ${PHP(net)}.`);
+        } catch (err) {
+          console.error(err);
+          alert("Failed to finalize day: " + (err.message || err));
         }
-        body.innerHTML = html;
-        const bs = new bootstrap.Modal(modalHtml);
-        bs.show();
-        modalHtml.addEventListener("hidden.bs.modal", () => {
-          bs.dispose();
-          modalHtml.remove();
-        });
       };
 
-      // Chart last 14 reports
+      // load saved reports
+      window.loadSavedReports = async function () {
+        try {
+          const snap = await get(reportsRef);
+          const data = snap.val() || {};
+          const list = document.getElementById("savedReportsList");
+          list.innerHTML = "";
+          const keys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1));
+          if (!keys.length) {
+            list.innerHTML =
+              '<div class="small text-muted">No saved reports yet.</div>';
+            return;
+          }
+          for (const k of keys) {
+            const d = data[k];
+            const item = document.createElement("div");
+            item.className =
+              "list-group-item d-flex justify-content-between align-items-start";
+            item.innerHTML = `<div>
+              <div><strong>${escapeHtml(k)}</strong></div>
+              <div class="small text-muted">Net: ${PHP(
+                d.net || 0
+              )} · Income: ${PHP(d.income || 0)}</div>
+            </div>
+            <div>
+              <button class="btn btn-outline-secondary btn-sm" onclick='viewReport("${k}")'>View</button>
+            </div>`;
+            list.appendChild(item);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      // view report modal
+      window.viewReport = async function (dateKey) {
+        try {
+          const snap = await get(dbRef(db, `reports/${dateKey}`));
+          const d = snap.val();
+          if (!d) return alert("Report not found");
+          const modalHtml = document.createElement("div");
+          modalHtml.className = "modal fade";
+          modalHtml.tabIndex = -1;
+          modalHtml.innerHTML = `<div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Report: ${escapeHtml(
+            dateKey
+          )}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" style="max-height:60vh; overflow:auto;"></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div></div></div>`;
+          document.body.appendChild(modalHtml);
+          const body = modalHtml.querySelector(".modal-body");
+          const content = [];
+          content.push(`<h6>Income: ${PHP(d.income)}</h6>`);
+          content.push(
+            `<p class="small-muted">Expenses: ${PHP(
+              d.totalExpenses
+            )} · Net: ${PHP(d.net)}</p>`
+          );
+          if (d.expenses && d.expenses.length) {
+            content.push(
+              `<hr><h6>Expenses</h6><table style="width:100%; border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Name</th><th style="text-align:left;padding:6px;border-bottom:1px solid #ddd;">Qty</th><th style="text-align:right;padding:6px;border-bottom:1px solid #ddd;">Amount</th></tr></thead><tbody>`
+            );
+            d.expenses.forEach((e) => {
+              content.push(
+                `<tr><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${escapeHtml(
+                  e.name || ""
+                )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;">${escapeHtml(
+                  e.quantity || ""
+                )}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;text-align:right;">${PHP(
+                  e.amount
+                )}</td></tr>`
+              );
+            });
+            content.push(`</tbody></table>`);
+          } else {
+            content.push(
+              '<div class="small text-muted">No expenses recorded.</div>'
+            );
+          }
+          body.innerHTML = content.join("");
+          const bs = new bootstrap.Modal(modalHtml);
+          bs.show();
+          modalHtml.addEventListener("hidden.bs.modal", () => {
+            bs.dispose();
+            modalHtml.remove();
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      // chart
       let summaryChart = null;
       window.loadSummaryChart = async function () {
-        const snap = await get(reportsRef);
-        const data = snap.val() || {};
-        const keys = Object.keys(data).sort();
-        const last14 = keys.slice(-14);
-        const labels = last14;
-        const nets = [];
-        last14.forEach((k) => nets.push(Number(data[k].net || 0)));
-        const ctx = document.getElementById("summaryChart").getContext("2d");
-        if (summaryChart) {
-          summaryChart.data.labels = labels;
-          summaryChart.data.datasets[0].data = nets;
-          summaryChart.update();
-        } else {
-          summaryChart = new Chart(ctx, {
-            type: "bar",
-            data: {
-              labels,
-              datasets: [
-                { label: "Net Income", data: nets, backgroundColor: "#2b6cb0" },
-              ],
-            },
-            options: {
-              responsive: true,
-              plugins: { legend: { display: false } },
-              scales: { y: { beginAtZero: true } },
-            },
+        try {
+          const snap = await get(reportsRef);
+          const data = snap.val() || {};
+          const keys = Object.keys(data).sort();
+          const last = keys.slice(-14);
+          const labels = [];
+          const nets = [];
+          last.forEach((k) => {
+            labels.push(k);
+            nets.push(Number(data[k].net || 0));
           });
+          const ctx = document.getElementById("summaryChart").getContext("2d");
+          if (summaryChart) {
+            summaryChart.data.labels = labels;
+            summaryChart.data.datasets[0].data = nets;
+            summaryChart.update();
+          } else {
+            summaryChart = new Chart(ctx, {
+              type: "bar",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "Net Income",
+                    data: nets,
+                    backgroundColor: "#2b6cb0",
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } },
+              },
+            });
+          }
+        } catch (err) {
+          console.error(err);
         }
       };
 
-      function escapeHtml(s) {
-        if (!s) return "";
-        return String(s).replace(
-          /[&<>"]/g,
-          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+      const escapeHtml = (str) =>
+        str.replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#039;",
+            }[c])
         );
-      }
 
-      (async function init() {
-        await loadSavedReports();
-        await loadSummaryChart();
-      })();
+      loadSavedReports();
+      loadSummaryChart();
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
